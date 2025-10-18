@@ -2,14 +2,11 @@
 """
 Módulo de Serializers para o App 'accounts'.
 
-Este módulo define os "contratos de dados" (schemas) para a API de contas,
-controlando como os dados são validados, convertidos e representados em JSON.
-
 Author: Dzaion
-Version: 1.1.0
+Version: 0.5.0
 """
 from datetime import timedelta
-
+from django.contrib.auth import authenticate
 from django.contrib.auth import password_validation
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
@@ -22,114 +19,105 @@ from accounts.models import User
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
-    Serializer de autenticação customizado.
+    Serializer de autenticação que assume controle total do fluxo de login
+    para fornecer mensagens de erro precisas e estruturadas.
     """
-
     def validate(self, attrs):
-        """
-        Valida as credenciais e customiza o tempo de vida do token.
-        """
+        email_or_whatsapp = attrs.get(self.username_field)
+        password = attrs.get('password')
+
+        user = authenticate(
+            request=self.context.get('request'),
+            username=email_or_whatsapp,
+            password=password
+        )
+
+        if user is None:
+            # DZAION-UPDATE: Padronizando a resposta de erro genérica.
+            error_detail = {
+                "error_code": "invalid_credentials",
+                "message": "Usuário e/ou senha incorreto(s)"
+            }
+            raise AuthenticationFailed(error_detail)
+
+        if not user.is_active:
+            # DZAION-UPDATE: Implementando a resposta de erro estruturada e profissional.
+            error_detail = {
+                "error_code": "account_not_active",
+                "message": "Esta conta está desativada. Por favor, realize a ativação.",
+                "context": {
+                    "email": user.email
+                }
+            }
+            raise AuthenticationFailed(error_detail)
+        
+        self.user = user
+        
         remember_me = self.context['request'].data.get('rememberMe', False)
-        data = super().validate(attrs)
-
-        if not self.user.is_active:
-            raise AuthenticationFailed("Esta conta está desativada. Contate o administrador.")
-
         refresh = RefreshToken.for_user(self.user)
         if remember_me:
             refresh.set_exp(lifetime=timedelta(days=180))
         else:
             refresh.set_exp(lifetime=api_settings.REFRESH_TOKEN_LIFETIME)
 
-        data['refresh'] = str(refresh)
-        data['access'] = str(refresh.access_token)
+        data = {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+        }
+        
         return data
 
+
+# ... (o resto do arquivo permanece o mesmo) ...
 
 class UserRegisterSerializer(serializers.ModelSerializer):
     """
     Serializer para o registro de novos usuários no sistema.
     """
-    email = serializers.EmailField(
-        help_text="Endereço de e-mail único. Será usado para login."
-    )
-    name = serializers.CharField(
-        help_text="Nome completo do usuário (nome e sobrenome)."
-    )
-    whatsapp = serializers.CharField(
-        help_text="Número de WhatsApp no formato internacional E.164 (ex: +5538999998888)."
-    )
-    cpf = serializers.CharField(
-        help_text="CPF do usuário, apenas números."
-    )
-    password = serializers.CharField(
-        label="Senha",
-        write_only=True,
-        help_text="Senha de acesso. Mínimo de 8 caracteres."
-    )
-    confirm_password = serializers.CharField(
-        label="Confirmação de Senha",
-        write_only=True,
-        required=True,
-        help_text="Repita a senha para confirmação."
-    )
+    email = serializers.EmailField(help_text="Endereço de e-mail único. Será usado para login.")
+    name = serializers.CharField(help_text="Nome completo do usuário (nome e sobrenome).")
+    whatsapp = serializers.CharField(help_text="Número de WhatsApp no formato internacional E.164.")
+    cpf = serializers.CharField(help_text="CPF do usuário, apenas números.")
+    password = serializers.CharField(label="Senha", write_only=True, help_text="Senha de acesso.")
+    confirm_password = serializers.CharField(label="Confirmação de Senha", write_only=True, required=True, help_text="Repita a senha.")
 
     class Meta:
         model = User
-        fields = [
-            'id', 'name', 'gender', 'date_birth', 'email', 'whatsapp',
-            'cpf', 'password', 'confirm_password'
-        ]
+        fields = ['id', 'name', 'gender', 'date_birth', 'email', 'whatsapp', 'cpf', 'password', 'confirm_password']
         read_only_fields = ['id']
 
     def validate(self, attrs):
         if attrs['password'] != attrs['confirm_password']:
-            raise serializers.ValidationError(
-                {'confirm_password': 'As senhas não coincidem.'}
-            )
+            raise serializers.ValidationError({'confirm_password': 'As senhas não coincidem.'})
         password_validation.validate_password(attrs['password'])
         return attrs
 
     def create(self, validated_data):
-        validated_data.pop('confirm_password')
+        validated_data.pop('confirm_password', None)
         password = validated_data.pop('password')
-        user = User.objects.create_user(password=password, **validated_data)
+        user = User(**validated_data)
+        user.set_password(password)
+        user.full_clean()
+        user.save()
         return user
 
 
 class UserPhotoSerializer(serializers.ModelSerializer):
-    """Serializer específico para o upload da foto de perfil do usuário."""
     class Meta:
         model = User
         fields = ['photo']
-        extra_kwargs = {
-            'photo': {'help_text': 'Arquivo de imagem para o perfil do usuário.'}
-        }
+
+
+class UserUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['name', 'nickname', 'gender', 'date_birth']
 
 
 class ChangePasswordSerializer(serializers.Serializer):
-    """
-    Serializer para o processo de alteração de senha de um usuário autenticado.
-    """
-    current_password = serializers.CharField(
-        label="Senha Atual",
-        required=True,
-        write_only=True,
-        help_text="A senha atual do usuário para verificação."
-    )
-    new_password = serializers.CharField(
-        label="Nova Senha",
-        required=True,
-        write_only=True,
-        min_length=8,
-        help_text="A nova senha desejada."
-    )
-    confirm_password = serializers.CharField(
-        label="Confirmação da Nova Senha",
-        required=True,
-        write_only=True,
-        help_text="Repita a nova senha para confirmação."
-    )
+    current_password = serializers.CharField(required=True, write_only=True)
+    new_password = serializers.CharField(required=True, write_only=True, min_length=8)
+    confirm_password = serializers.CharField(required=True, write_only=True)
 
     def validate_current_password(self, value):
         user = self.context['request'].user
@@ -139,9 +127,7 @@ class ChangePasswordSerializer(serializers.Serializer):
 
     def validate(self, data):
         if data['new_password'] != data['confirm_password']:
-            raise serializers.ValidationError(
-                {'confirm_password': "A nova senha e a confirmação não coincidem."}
-            )
+            raise serializers.ValidationError({'confirm_password': "A nova senha e a confirmação não coincidem."})
         password_validation.validate_password(data['new_password'])
         return data
 
@@ -153,24 +139,12 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 
 class UserDetailSerializer(serializers.ModelSerializer):
-    """
-    Serializer para exibir os detalhes de um usuário.
-    """
-    photo_url = serializers.SerializerMethodField(
-        help_text="URL completa da foto de perfil do usuário."
-    )
-    age = serializers.IntegerField(
-        read_only=True,
-        help_text="Idade atual do usuário em anos."
-    )
+    photo_url = serializers.SerializerMethodField()
+    age = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = User
-        # DZAION-REVIEW: Adicionado 'gender' e 'date_birth' para um perfil mais completo.
-        fields = [
-            'id', 'name', 'nickname', 'email', 'whatsapp', 'age', 'gender',
-            'date_birth', 'photo_url', 'is_superuser'
-        ]
+        fields = ['id', 'name', 'nickname', 'email', 'whatsapp', 'age', 'gender', 'date_birth', 'photo_url', 'is_superuser']
         read_only_fields = fields
 
     def get_photo_url(self, user):
@@ -178,3 +152,4 @@ class UserDetailSerializer(serializers.ModelSerializer):
         if user.photo and request:
             return request.build_absolute_uri(user.photo.url)
         return None
+

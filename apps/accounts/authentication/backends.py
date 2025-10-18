@@ -1,50 +1,57 @@
-# DZAION-REVIEW: Adicionado re e phonenumbers para normalização
+# -*- coding: utf-8 -*-
+"""
+Módulo de Backend de Autenticação Customizado.
+
+Author: Dzaion
+Version: 0.3.0
+"""
+from __future__ import annotations
 import re
 import phonenumbers
 from django.contrib.auth.backends import ModelBackend
-# DZAION-REVIEW: Alterado para importação direta para melhor suporte da IDE.
-# from django.contrib.auth import get_user_model
 from django.db.models import Q
 from accounts.models import User
 
-# User = get_user_model()
-
 class EmailOrWhatsAppBackend(ModelBackend):
-    # DZAION-REVIEW: Type hint corrigido com a importação direta.
     def authenticate(self, request, username: str | None = None, password: str | None = None, **kwargs) -> User | None:
         """
         Autentica um usuário usando e-mail ou número de WhatsApp.
-
-        Normaliza o `username` se ele se parece com um número de telefone para
-        garantir consistência com o formato E.164 armazenado no banco de dados.
+        Sua única responsabilidade é validar as credenciais. A verificação de status
+        do usuário é delegada para as camadas superiores (serializers).
         """
-        if username is None:
+        login_identifier = kwargs.get(User.USERNAME_FIELD) or username
+        
+        if not login_identifier or not password:
             return None
 
-        # DZAION-REVIEW: Lógica de normalização do WhatsApp adicionada, espelhando o model.
-        # Se o `username` contém dígitos e pode ser um telefone, normaliza-o.
-        if any(char.isdigit() for char in username) and not '@' in username:
+        normalized_identifier = login_identifier
+        
+        if any(char.isdigit() for char in login_identifier) and '@' not in login_identifier:
             try:
-                cleaned_whatsapp = re.sub(r'[^\d+]', '', username)
-                if not cleaned_whatsapp.startswith('+'):
-                    cleaned_whatsapp = f"+55{cleaned_whatsapp}"
+                cleaned_phone = re.sub(r'[^\d+]', '', login_identifier)
+                if not cleaned_phone.startswith('+'):
+                    cleaned_phone = f"+55{cleaned_phone}"
 
-                parsed_phone = phonenumbers.parse(cleaned_whatsapp, None)
+                parsed_phone = phonenumbers.parse(cleaned_phone, None)
                 if phonenumbers.is_valid_number(parsed_phone):
-                    username = phonenumbers.format_number(
+                    normalized_identifier = phonenumbers.format_number(
                         parsed_phone, phonenumbers.PhoneNumberFormat.E164
                     )
             except phonenumbers.phonenumberutil.NumberParseException:
-                # Se a normalização falhar, prossegue com o valor original.
                 pass
         
-        # DZAION-REVIEW: Bloco try/except corrigido para envolver toda a lógica e evitar UnboundLocalError.
         try:
-            user = User.objects.get(Q(email__iexact=username) | Q(whatsapp=username))
-            if user.check_password(password) and self.user_can_authenticate(user):
+            user = User.objects.get(
+                Q(email__iexact=normalized_identifier) | Q(whatsapp=normalized_identifier)
+            )
+            
+            # Retorna o usuário se a senha estiver correta, mesmo que ele esteja inativo.
+            if user.check_password(password):
                 return user
+                
         except User.DoesNotExist:
-            # Retorna None para indicar falha na autenticação, como esperado pelo Django.
             return None
+            
+        # Retorna None se a senha estiver incorreta.
         return None
 
