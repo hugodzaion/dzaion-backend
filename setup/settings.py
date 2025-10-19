@@ -31,24 +31,38 @@ INSTALLED_APPS = [
     'django.contrib.sites',
     # Third-Party Apps
     'rest_framework',
+    'rest_framework.authtoken',
     'rest_framework_simplejwt',
     'rest_framework_api_key',
     'drf_spectacular',
     "corsheaders",
     'viewflow',
-    # 'dzaion',
+    # DZAION-AUTH: Novas apps para autenticação social
+    'dj_rest_auth',
+    'dj_rest_auth.registration',
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.google',
+    'dzaion',
     # Components Apps
     'locations',
     'contacts',
     'core',
+    'guards',
+    'entitlements',
     'accounts',
     'activities.apps.ActivitiesConfig',
+    'tenants',
+    'finances.apps.FinancesConfig',
+    'products',
 ]
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    "allauth.account.middleware.AccountMiddleware",
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -104,7 +118,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 AUTHENTICATION_BACKENDS = [
-    # 'django.contrib.auth.backends.ModelBackend',
+    'allauth.account.auth_backends.AuthenticationBackend',
     'accounts.authentication.backends.EmailOrWhatsAppBackend',
 ]
 
@@ -146,8 +160,39 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
 }
 
+# DZAION-AUTH: Configurações para dj-rest-auth e allauth
+REST_AUTH = {
+    'USE_JWT': True,
+    'JWT_AUTH_HTTPONLY': False, # Permite que o frontend acesse o token
+}
+
 # Sites Framework
 SITE_ID = 1
+
+# Configurações do Allauth
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None
+ACCOUNT_AUTHENTICATION_METHOD = 'email'
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_EMAIL_VERIFICATION = 'none' # Simplificando por enquanto
+SOCIALACCOUNT_ADAPTER = 'accounts.adapters.CustomSocialAccountAdapter'
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        'APP': {
+            'client_id': config('GOOGLE_CLIENT_ID'),
+            'secret': config('GOOGLE_CLIENT_SECRET'),
+            'key': ''
+        },
+        'SCOPE': [
+            'profile',
+            'email',
+        ],
+        'AUTH_PARAMS': {
+            'access_type': 'offline',
+        }
+    }
+}
+
 
 # Redis como broker
 CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
