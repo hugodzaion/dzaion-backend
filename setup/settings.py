@@ -50,12 +50,14 @@ INSTALLED_APPS = [
     'contacts',
     'core',
     'guards',
-    'entitlements',
+    'entitlements.apps.EntitlementsConfig',
     'accounts',
     'activities.apps.ActivitiesConfig',
     'tenants',
     'finances.apps.FinancesConfig',
     'products',
+    # Modules
+    'crm',
 ]
 
 MIDDLEWARE = [
@@ -145,7 +147,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Cors Allowed
 CORS_ALLOWED_ORIGINS = [
-    'http://127.0.0.1:5173'
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5174',
 ]
 
 # Simple JWT

@@ -4,12 +4,22 @@ from django.conf import settings
 from django.conf.urls.static import static
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
+# DZAION-AUTH: Importação da nossa nova view customizada
+from accounts.views import GoogleLoginView
+
 # URLS V1
-url_v1_patterns = [
+url_v1_patterns = [    # DZAION-AUTH: Rota de login do Google agora usa nossa view customizada
+    path('accounts/auth/google/', GoogleLoginView.as_view(), name='google_login'),
     path('accounts/', include('accounts.urls')),
-    # path('tenants/', include('tenants.urls')),
-    # path('products/', include('products.urls')),
+    path('tenants/', include('tenants.urls')),
+    path('products/', include('products.urls')),
     path('activities/', include('activities.urls')),
+    path('finances/', include('finances.urls')),
+    path('locations/', include('locations.urls')),
+    path('contacts/', include('contacts.urls')),
+    path('tenants/<uuid:tenant_pk>/subscriptions/', include('entitlements.urls')),
+    # URLS dos módulos
+    path('crm/', include('crm.urls')),
 ]
 
 # URLS webhooks
