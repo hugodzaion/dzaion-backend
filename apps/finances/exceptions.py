@@ -7,7 +7,7 @@ dentro da camada de serviço financeira, permitindo um tratamento de
 erros mais claro e explícito nas camadas superiores (views).
 
 Author: Dzaion
-Version: 0.1.0
+Version: 0.2.0
 """
 
 class FinanceError(Exception):
@@ -25,3 +25,13 @@ class WalletAlreadyExistsError(FinanceError):
 class InvalidTransactionAmountError(FinanceError):
     """Lançada quando o valor de uma transação é inválido (ex: negativo ou zero)."""
     pass
+
+# DZAION-FIX: Adicionando as exceções que estavam faltando.
+class InvoiceAlreadyPaidError(FinanceError):
+    """Lançada ao tentar pagar uma fatura que já está com o status 'Paga'."""
+    pass
+
+class InvoiceStatusError(FinanceError):
+    """Lançada ao tentar realizar uma operação em uma fatura com status inválido (ex: pagar uma fatura cancelada)."""
+    pass
+

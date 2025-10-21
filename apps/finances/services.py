@@ -7,18 +7,20 @@ todas as operações financeiras, garantindo segurança, consistência e
 atomicidade através de transações de banco de dados.
 
 Author: Dzaion
-Version: 0.1.0
+Version: 0.2.0
 """
 from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
 
-from .models import Wallet, Transaction, TransactionType
+from .models import Wallet, Transaction, TransactionType, Invoice
 from .exceptions import (
     InsufficientFundsError,
     WalletAlreadyExistsError,
-    InvalidTransactionAmountError
+    InvalidTransactionAmountError,
+    InvoiceAlreadyPaidError,
+    InvoiceStatusError,
 )
 
 class FinanceService:
@@ -40,10 +42,6 @@ class FinanceService:
     def create_wallet(owner) -> Wallet:
         """
         Cria uma nova carteira para um proprietário (User ou Tenant).
-
-        :param owner: A instância do User ou Tenant.
-        :return: A instância da Wallet criada.
-        :raises WalletAlreadyExistsError: Se o proprietário já tiver uma carteira.
         """
         owner_fields = FinanceService._get_owner_fields(owner)
         if Wallet.objects.filter(**owner_fields).exists():
@@ -53,74 +51,67 @@ class FinanceService:
 
     @staticmethod
     @transaction.atomic
-    def credit(
-        wallet: Wallet,
-        amount: Decimal,
-        transaction_type: TransactionType,
-        invoice=None
-    ) -> Transaction:
-        """
-        Adiciona crédito a uma carteira e registra a transação.
-
-        :param wallet: A carteira a ser creditada.
-        :param amount: O valor a ser adicionado (deve ser positivo).
-        :param transaction_type: O tipo da transação.
-        :param invoice: (Opcional) A fatura associada a esta transação.
-        :return: A transação de crédito criada.
-        :raises InvalidTransactionAmountError: Se o valor for menor ou igual a zero.
-        """
+    def credit(wallet: Wallet, amount: Decimal, transaction_type_code: str, invoice=None) -> Transaction:
+        """ Adiciona crédito a uma carteira e registra a transação. """
         if amount <= 0:
             raise InvalidTransactionAmountError("O valor do crédito deve ser positivo.")
 
-        # Atualiza o saldo da carteira de forma segura
+        transaction_type = TransactionType.objects.get(code=transaction_type_code)
         wallet.balance += amount
         wallet.save(update_fields=['balance'])
 
-        # Cria o registro imutável da transação
         return Transaction.objects.create(
-            wallet=wallet,
-            amount=amount,
-            type=transaction_type,
-            invoice=invoice,
-            status=Transaction.TransactionStatus.COMPLETED,
-            processed_at=timezone.now()
+            wallet=wallet, amount=amount, type=transaction_type, invoice=invoice,
+            status=Transaction.TransactionStatus.COMPLETED, processed_at=timezone.now()
         )
 
     @staticmethod
     @transaction.atomic
-    def debit(
-        wallet: Wallet,
-        amount: Decimal,
-        transaction_type: TransactionType,
-        invoice=None
-    ) -> Transaction:
-        """
-        Remove fundos de uma carteira e registra a transação.
-
-        :param wallet: A carteira a ser debitada.
-        :param amount: O valor a ser removido (deve ser positivo).
-        :param transaction_type: O tipo da transação.
-        :param invoice: (Opcional) A fatura associada.
-        :return: A transação de débito criada.
-        :raises InvalidTransactionAmountError: Se o valor for inválido.
-        :raises InsufficientFundsError: Se o saldo for insuficiente.
-        """
+    def debit(wallet: Wallet, amount: Decimal, transaction_type_code: str, invoice=None) -> Transaction:
+        """ Remove fundos de uma carteira e registra a transação. """
         if amount <= 0:
             raise InvalidTransactionAmountError("O valor do débito deve ser positivo.")
-        
         if wallet.balance < amount:
             raise InsufficientFundsError("Saldo insuficiente para realizar a operação.")
 
-        # Atualiza o saldo da carteira
+        transaction_type = TransactionType.objects.get(code=transaction_type_code)
         wallet.balance -= amount
         wallet.save(update_fields=['balance'])
 
-        # Cria o registro imutável da transação (valor negativo para débito)
         return Transaction.objects.create(
-            wallet=wallet,
-            amount=-amount,
-            type=transaction_type,
-            invoice=invoice,
-            status=Transaction.TransactionStatus.COMPLETED,
-            processed_at=timezone.now()
+            wallet=wallet, amount=-amount, type=transaction_type, invoice=invoice,
+            status=Transaction.TransactionStatus.COMPLETED, processed_at=timezone.now()
         )
+
+    @staticmethod
+    @transaction.atomic
+    def pay_invoice_with_wallet(invoice: Invoice) -> Transaction:
+        """
+        Realiza o pagamento de uma fatura usando o saldo da carteira do Tenant.
+        """
+        if invoice.status == Invoice.InvoiceStatus.PAID:
+            raise InvoiceAlreadyPaidError("Esta fatura já foi paga.")
+        if invoice.status != Invoice.InvoiceStatus.OPEN:
+            raise InvoiceStatusError("Apenas faturas abertas podem ser pagas.")
+
+        tenant = invoice.tenant
+        wallet = tenant.wallet.first()
+
+        if not wallet:
+            raise InsufficientFundsError("O Tenant não possui uma carteira para realizar o pagamento.")
+        
+        # O método 'debit' já verifica o saldo e levanta InsufficientFundsError se necessário.
+        transaction = FinanceService.debit(
+            wallet=wallet,
+            amount=invoice.amount,
+            transaction_type_code='INVOICE_PAYMENT',
+            invoice=invoice
+        )
+
+        # Se o débito foi bem-sucedido, atualiza a fatura.
+        invoice.status = Invoice.InvoiceStatus.PAID
+        invoice.paid_at = timezone.now()
+        invoice.save(update_fields=['status', 'paid_at'])
+
+        return transaction
+

@@ -2,18 +2,30 @@
 """
 Módulo de URLs para o App 'finances'.
 
-Mapeia as URLs para as views correspondentes da API financeira.
-
 Author: Dzaion
-Version: 0.1.0
+Version: 0.2.0
 """
 from django.urls import path
-from .views import MyWalletView, MyTransactionListView
+from .views import (
+    MyWalletView, MyTransactionListView,
+    TenantWalletView, TenantTransactionListView,
+    TenantInvoiceListView, TenantInvoiceRetrieveView, TenantInvoicePayView
+)
 
-urlpatterns = [
-    # Rota para a carteira do usuário logado: GET /v1/finances/my-wallet/
+# URLs para finanças pessoais do usuário logado
+personal_patterns = [
     path('my-wallet/', MyWalletView.as_view(), name='my-wallet'),
-    
-    # Rota para o extrato do usuário logado: GET /v1/finances/my-transactions/
     path('my-transactions/', MyTransactionListView.as_view(), name='my-transactions'),
 ]
+
+# URLs para finanças de um Tenant específico (aninhadas)
+tenant_patterns = [
+    path('wallet/', TenantWalletView.as_view(), name='tenant-wallet'),
+    path('transactions/', TenantTransactionListView.as_view(), name='tenant-transactions'),
+    path('invoices/', TenantInvoiceListView.as_view(), name='tenant-invoices'),
+    path('invoices/<uuid:pk>/', TenantInvoiceRetrieveView.as_view(), name='tenant-invoice-detail'),
+    path('invoices/<uuid:pk>/pay/', TenantInvoicePayView.as_view(), name='tenant-invoice-pay'),
+]
+
+urlpatterns = personal_patterns
+
