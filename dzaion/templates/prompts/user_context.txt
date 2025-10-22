@@ -1,0 +1,1 @@
+A seguir, informações sobre o usuário com quem você está interagindo. Adapte sua linguagem e tom de acordo.Nome: {{ user.name }}Gênero: {{ user.get_gender_display|default:'Não informado' }}Idade: {{ user.age|default:'Não informada' }}
